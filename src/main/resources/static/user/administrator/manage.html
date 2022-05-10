@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<!-- 网页使用的语言 -->
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="IE=edge" http-equiv="X-UA-Compatible">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <link href="../../css/index.min.css" rel="stylesheet">
+    <script src="../../js/vue.min.js"></script>
+    <script src="../../js/index.js"></script>
+    <script src="../../js/axios.min.js"></script>
+    <title>图书管理系统</title>
+    <link rel="icon" href="../../img/icon.svg">
+</head>
+
+<body>
+<div id="app">
+    <div class="el-main" style="width: 80%;margin: auto">
+        <h1 style="text-align: center">图书信息列表</h1>
+        <div style="float: right; margin: 5px">
+            <el-button plain type="primary" @click="dialogInsertFormVisible = true">添加图书</el-button>
+            <el-button :disabled="buttonDeleteSelectDisable" plain type="danger" @click="deleteCommoditiesByIds">
+                批量删除
+            </el-button>
+        </div>
+
+        <el-table v-loading="loading" :data="bookList" stripe style="width: 100%;margin: auto"
+                  @selection-change="handleSelectionChange">
+            <el-table-column type="selection" width="50"></el-table-column>
+            <el-table-column label="编号" width="250">
+                <template slot-scope="scope">
+                    <span style="margin-left: 10px">{{ scope.row.id }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column label="名称" width="500">
+                <template slot-scope="scope">
+                    <span style="margin-left: 10px">{{ scope.row.name }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column label="价格">
+                <template slot-scope="scope">
+                    <span style="margin-inline: 10px">{{ scope.row.price }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column label="简介" width="125">
+                <template slot-scope="scope">
+                    <el-popover placement="left" trigger="hover">
+                        <p>{{ scope.row.introduction == null ? "该图书简介为空" : scope.row.introduction }}</p>
+                        <div slot="reference" class="name-wrapper">
+                            <el-tag size="medium" type="info">查看</el-tag>
+                        </div>
+                    </el-popover>
+                </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200">
+                <template slot-scope="scope">
+                    <el-link icon="el-icon-edit" @click="showInformation(scope.row)">编辑
+                    </el-link>&nbsp;
+                    <el-popconfirm title="您确定要删除该条记录吗？" @confirm="deleteBookById(scope.row.id)">
+                        <el-link slot="reference" icon="el-icon-delete">删除</el-link>
+                    </el-popconfirm>
+                </template>
+            </el-table-column>
+        </el-table>
+    </div>
+
+    <el-dialog :visible.sync="dialogInsertFormVisible" title="图书添加" width="500px">
+        <el-form ref="insertForm" :model="insertForm" :rules="rules" label-width="auto">
+            <el-form-item label="编号" prop="id">
+                <el-input v-model="insertForm.id"></el-input>
+            </el-form-item>
+            <el-form-item label="名称" prop="name">
+                <el-input v-model="insertForm.name"></el-input>
+            </el-form-item>
+            <el-form-item label="价格" prop="price">
+                <el-input-number v-model="insertForm.price" :max="999999999999" :min="0" :precision="2" :step="0.1"
+                                 size="medium">
+                </el-input-number>
+            </el-form-item>
+            <el-form-item label="简介" prop="introduction">
+                <el-input v-model="insertForm.introduction" maxlength="100" type="textarea"></el-input>
+            </el-form-item>
+        </el-form>
+        <div slot="footer" class="dialog-footer">
+            <el-button @click="dialogInsertFormVisible = false">取 消</el-button>
+            <el-button @click="resetForm('insertForm')">重置</el-button>
+            <el-button type="primary" @click="submitInsertForm('insertForm')">添 加</el-button>
+        </div>
+    </el-dialog>
+
+    <el-dialog :visible.sync="dialogUpdateFormVisible" title="图书编辑" width="500px">
+        <el-form ref="updateForm" :model="updateForm" :rules="rules" label-width="auto">
+            <el-form-item label="编号" prop="id">
+                <el-input v-model="updateForm.id" disabled></el-input>
+            </el-form-item>
+            <el-form-item label="名称" prop="name">
+                <el-input v-model="updateForm.name"></el-input>
+            </el-form-item>
+            <el-form-item label="价格" prop="price">
+                <el-input-number v-model="updateForm.price" :max="999999999999" :min="0" :precision="2" :step="0.1"
+                                 size="medium"></el-input-number>
+            </el-form-item>
+            <el-form-item label="简介" prop="introduction">
+                <el-input v-model="updateForm.introduction" maxlength="100" type="textarea"></el-input>
+            </el-form-item>
+        </el-form>
+        <div slot="footer" class="dialog-footer">
+            <el-button @click="dialogUpdateFormVisible = false">取 消</el-button>
+            <el-button type="primary" @click="submitUpdateForm('updateForm')">保 存</el-button>
+        </div>
+    </el-dialog>
+
+    <el-pagination :current-page="curPage" :hide-on-single-page="lastPage <= 1" :total="lastPage * 10" background
+                   layout="prev, pager, next" @current-change="pageChange">
+    </el-pagination>
+</div>
+<script>
+    new Vue({
+        el: "#app",
+        data() {
+            return {
+                // contextPath: "http://localhost:8080/commoditiesManagerSystem",
+                contextPath: "http://119.91.225.190/commoditiesManagerSystem",
+                // contextPath: "http://www.uestc432.edu.cn/commoditiesManagerSystem",
+                // contextPath: "https://274260fb.vip.cpolar.cn/commoditiesManagerSystem",
+                bookList: [],
+                curPage: 1,
+                lastPage: 1,
+                loading: true,
+                checkedGoods: [],
+                dialogInsertFormVisible: false,
+                dialogUpdateFormVisible: false,
+                buttonDeleteSelectDisable: true,
+                insertForm: {
+                    id: '',
+                    name: '',
+                    price: 0.00,
+                    introduction: ''
+                },
+                updateForm: {
+                    id: '',
+                    name: '',
+                    price: 0.00,
+                    introduction: ''
+                },
+                rules: {
+                    id: [
+                        {required: true, message: '请输入图书编号', trigger: 'blur'},
+                        {min: 5, max: 20, message: '长度在 5 到 20 个字符', trigger: 'blur'},
+                        {
+                            required: true,
+                            pattern: /^[\w-]+$/,
+                            message: '图书编号只能由数字、字母、杠-或下划线_组成',
+                            trigger: 'blur'
+                        }
+                    ],
+                    name: [
+                        {required: true, message: '请输入图书名称', trigger: 'blur'},
+                        {max: 32, message: '长度应小于 32 个字符', trigger: 'blur'},
+                        {
+                            required: true,
+                            pattern: /^\S[\s|\S]*\S$/,
+                            message: '图书名称首尾不能为空格',
+                            trigger: 'blur'
+                        }
+                    ]
+                }
+            }
+        },
+        mounted() {
+            let _this = this;
+            axios.defaults.baseURL = _this.contextPath + "/commodity";
+            this.init();
+        },
+        methods: {
+            init() {
+                let _this = this;
+                axios.get("/init?page=" + _this.curPage).then(function (resp) {
+                    _this.bookList = resp.data.data["records"];
+                    _this.curPage = resp.data.data["current"];
+                    _this.lastPage = resp.data.data["pages"];
+                    _this.loading = false;
+                    _this.checkGoods = [];
+                });
+            },
+            submitInsertForm(formName) {
+                this.$refs[formName].validate((valid) => {
+                    if (valid) {
+                        this.dialogInsertFormVisible = false;
+                        this.loading = true;
+                        let _this = this
+                        axios.post("/insert", _this.insertForm).then(function () {
+                            _this.$message({
+                                type: 'success',
+                                showClose: true,
+                                message: '添加成功!'
+                            });
+                        }).finally(function () {
+                            _this.init();
+                        });
+                        this.insertForm = {
+                            id: '',
+                            name: '',
+                            price: 0.0,
+                            introduction: ''
+                        };
+                        this.loading = false;
+                    } else {
+                        return false;
+                    }
+                });
+            },
+            resetForm(formName) {
+                this.$refs[formName].resetFields();
+            },
+            submitUpdateForm(formName) {
+                this.$refs[formName].validate((valid) => {
+                    if (valid) {
+                        this.dialogUpdateFormVisible = false;
+                        this.loading = true;
+                        let _this = this;
+                        axios.post("/update", _this.updateForm).then(function (resp) {
+                            _this.$message({
+                                type: 'success',
+                                showClose: true,
+                                message: '保存成功!'
+                            });
+                            _this.updateForm = {
+                                id: '',
+                                name: '',
+                                price: 0.0,
+                                introduction: ''
+                            };
+                            _this.loading = false;
+                        }).finally(function () {
+                            _this.init();
+                        });
+                    } else {
+                        return false;
+                    }
+                });
+            },
+            deleteBookById(id) {
+                this.loading = true;
+                let _this = this;
+                axios.get("/delete?id=" + id).then(function (resp) {
+                    _this.$message({
+                        type: 'success',
+                        showClose: true,
+                        message: '删除成功!'
+                    });
+                }).finally(function () {
+                    _this.init();
+                });
+                this.loading = false;
+            },
+            showInformation(book) {
+                this.$nextTick(() => {
+                    this.$refs["updateForm"].clearValidate();
+                })
+                this.updateForm.id = book.id
+                this.updateForm.name = book.name
+                this.updateForm.price = book.price
+                this.updateForm.introduction = book.introduction
+                this.dialogUpdateFormVisible = true;
+            },
+            deleteCommoditiesByIds() {
+                this.$confirm('您确定要删除这些记录吗？', '提示', {
+                    confirmButtonText: '确定',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(() => {
+                    this.loading = true;
+                    let _this = this;
+                    axios.post("/delete", this.checkGoods).then(function (resp) {
+                        _this.$message({
+                            type: 'success',
+                            showClose: true,
+                            message: '删除成功!'
+                        });
+                    }).finally(function () {
+                        _this.init();
+                    });
+                }).catch(() => {
+                    this.$message({
+                        type: 'info',
+                        showClose: true,
+                        message: '已取消删除'
+                    });
+                });
+            },
+            handleSelectionChange(val) {
+                let list = []
+                for (let item of val) {
+                    list.push(item.id);
+                }
+                this.checkGoods = list;
+                this.buttonDeleteSelectDisable = this.checkGoods.length === 0;
+            },
+            pageChange(val) {
+                this.loading = true;
+                let _this = this;
+                axios.get("/init?page=" + val).then(function (resp) {
+                }).finally(function () {
+                    _this.init();
+                });
+            }
+        }
+    })
+</script>
+</body>
+
+</html>
